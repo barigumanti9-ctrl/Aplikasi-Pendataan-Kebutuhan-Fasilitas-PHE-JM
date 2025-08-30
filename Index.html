@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Pendataan Kebutuhan Perbaikan</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.0/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin:20px; }
+    .header { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+    .header img { width:60px; height:60px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.3); }
+    .header h1 { margin:0; font-size:20px; font-weight:bold; }
+    .header p { margin:0; font-size:14px; color:#555; }
+    fieldset { border:1px solid #ccc; border-radius:8px; padding:15px; margin-bottom:20px; }
+    legend { font-weight:bold; }
+    label { display:block; margin-top:8px; font-size:14px; }
+    input, select { width:100%; padding:6px; margin-top:4px; }
+    button { margin:5px 3px; padding:8px 12px; border:none; border-radius:6px; cursor:pointer; }
+    .btn-primary { background:#1e88e5; color:#fff; }
+    .btn-secondary { background:#43a047; color:#fff; }
+    .btn-danger { background:#e53935; color:#fff; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th, td { border:1px solid #ccc; padding:8px; font-size:14px; text-align:left; }
+    th { background:#f5f5f5; }
+    .actions button { padding:4px 8px; font-size:12px; }
+    #previewFrame { width:100%; height:500px; border:1px solid #ccc; margin-top:10px; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <img src="logo.png" alt="Logo Aplikasi">
+    <div>
+      <h1>PENDATAAN KEBUTUHAN PERBAIKAN</h1>
+      <p>PERBAIKAN FASILITAS PHE JM</p>
+    </div>
+  </div>
+
+  <!-- FORM INPUT -->
+  <fieldset>
+    <legend>Input Barang</legend>
+    <label>Kategori</label>
+    <input type="text" id="kategori">
+
+    <label>Nama Barang</label>
+    <input type="text" id="nama">
+
+    <label>Merek / Type</label>
+    <input type="text" id="merek">
+
+    <label>Jumlah</label>
+    <input type="number" id="jumlah" value="0">
+
+    <label>Metode stok cadangan</label>
+    <select id="metode">
+      <option value="10">Otomatis 10%</option>
+      <option value="20">Otomatis 20%</option>
+      <option value="manual">Manual</option>
+    </select>
+
+    <label>Stok Cadangan</label>
+    <input type="number" id="cadangan" value="0">
+
+    <label>Keterangan</label>
+    <input type="text" id="keterangan">
+
+    <button class="btn-primary" onclick="tambahBarang()">Tambah</button>
+  </fieldset>
+
+  <!-- FILTER KATEGORI -->
+  <fieldset>
+    <legend>Filter & Rekap Data</legend>
+    <label>Pilih Kategori</label>
+    <select id="filterKategori" onchange="filterKategori()">
+      <option value="all">-- Semua Kategori --</option>
+    </select>
+    <button class="btn-secondary" onclick="downloadExcel()">Download Excel</button>
+    <button class="btn-secondary" onclick="previewPDF()">Preview PDF</button>
+    <button class="btn-secondary" onclick="downloadPDF()">Download PDF</button>
+
+    <table id="tabelData">
+      <thead>
+        <tr>
+          <th>No</th>
+          <th>Nama Barang</th>
+          <th>Merek/Type</th>
+          <th>Jumlah</th>
+          <th>Stok Cadangan</th>
+          <th>Keterangan</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <iframe id="previewFrame"></iframe>
+  </fieldset>
+
+<script>
+  let dataBarang = [];
+  let editIndex = null;
+
+  function tambahBarang(){
+    const kategori = document.getElementById('kategori').value;
+    const nama = document.getElementById('nama').value;
+    const merek = document.getElementById('merek').value;
+    const jumlah = parseInt(document.getElementById('jumlah').value);
+    const metode = document.getElementById('metode').value;
+    let cadangan = parseInt(document.getElementById('cadangan').value);
+    const ket = document.getElementById('keterangan').value;
+
+    if(metode !== "manual"){
+      cadangan = Math.ceil(jumlah * (parseInt(metode)/100));
+    }
+
+    if(editIndex !== null){
+      dataBarang[editIndex] = {kategori,nama,merek,jumlah,cadangan,ket};
+      editIndex = null;
+    } else {
+      dataBarang.push({kategori,nama,merek,jumlah,cadangan,ket});
+    }
+
+    updateKategoriOptions();
+    renderTabel();
+    clearForm();
+  }
+
+  function updateKategoriOptions(){
+    const select = document.getElementById("filterKategori");
+    const kategoriUnik = [...new Set(dataBarang.map(b=>b.kategori))];
+    select.innerHTML = `<option value="all">-- Semua Kategori --</option>`;
+    kategoriUnik.forEach(k=>{
+      select.innerHTML += `<option value="${k}">${k}</option>`;
+    });
+  }
+
+  function filterKategori(){
+    renderTabel();
+  }
+
+  function renderTabel(){
+    const tbody = document.querySelector("#tabelData tbody");
+    tbody.innerHTML = "";
+    const filter = document.getElementById("filterKategori").value;
+    const filtered = filter === "all" ? dataBarang : dataBarang.filter(b=>b.kategori===filter);
+
+    filtered.forEach((b,i)=>{
+      tbody.innerHTML += `
+        <tr>
+          <td>${i+1}</td>
+          <td>${b.nama}</td>
+          <td>${b.merek}</td>
+          <td>${b.jumlah}</td>
+          <td>${b.cadangan}</td>
+          <td>${b.ket}</td>
+          <td class="actions">
+            <button class="btn-primary" onclick="editBarang('${b.kategori}',${i})">Edit</button>
+            <button class="btn-danger" onclick="hapusBarang('${b.kategori}',${i})">Hapus</button>
+          </td>
+        </tr>`;
+    });
+  }
+
+  function editBarang(kategori,index){
+    const filter = document.getElementById("filterKategori").value;
+    const filtered = filter === "all" ? dataBarang : dataBarang.filter(b=>b.kategori===filter);
+    const barang = filtered[index];
+    document.getElementById('kategori').value = barang.kategori;
+    document.getElementById('nama').value = barang.nama;
+    document.getElementById('merek').value = barang.merek;
+    document.getElementById('jumlah').value = barang.jumlah;
+    document.getElementById('cadangan').value = barang.cadangan;
+    document.getElementById('keterangan').value = barang.ket;
+    editIndex = dataBarang.findIndex(b=>b===barang);
+  }
+
+  function hapusBarang(kategori,index){
+    const filter = document.getElementById("filterKategori").value;
+    const filtered = filter === "all" ? dataBarang : dataBarang.filter(b=>b.kategori===filter);
+    const barang = filtered[index];
+    const idx = dataBarang.findIndex(b=>b===barang);
+    if(idx>-1) dataBarang.splice(idx,1);
+    renderTabel();
+    updateKategoriOptions();
+  }
+
+  function clearForm(){
+    document.getElementById('kategori').value = "";
+    document.getElementById('nama').value = "";
+    document.getElementById('merek').value = "";
+    document.getElementById('jumlah').value = 0;
+    document.getElementById('cadangan').value = 0;
+    document.getElementById('keterangan').value = "";
+  }
+
+  function getFilteredData(){
+    const filter = document.getElementById("filterKategori").value;
+    return filter === "all" ? dataBarang : dataBarang.filter(b=>b.kategori===filter);
+  }
+
+  function downloadExcel(){
+    const data = getFilteredData();
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    const judul = document.getElementById("filterKategori").value === "all" ? "Semua Kategori" : document.getElementById("filterKategori").value;
+    XLSX.utils.book_append_sheet(wb, ws, "Data");
+    XLSX.writeFile(wb, `Data_Perbaiakan_${judul}.xlsx`);
+  }
+
+  function previewPDF(){
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF("p","pt","a4");
+    const data = getFilteredData();
+    const judul = document.getElementById("filterKategori").value === "all" ? "Semua Kategori" : document.getElementById("filterKategori").value;
+
+    pdf.text(`Data Kebutuhan Perbaikan - ${judul}`, 40, 30);
+    pdf.autoTable({
+      startY:50,
+      head:[["No","Nama Barang","Merek/Type","Jumlah","Stok Cadangan","Keterangan"]],
+      body:data.map((b,i)=>[i+1,b.nama,b.merek,b.jumlah,b.cadangan,b.ket]),
+      styles:{fontSize:10},
+      headStyles:{fillColor:[30,136,229]}
+    });
+    const blob = pdf.output("bloburl");
+    document.getElementById("previewFrame").src = blob;
+  }
+
+  function downloadPDF(){
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF("p","pt","a4");
+    const data = getFilteredData();
+    const judul = document.getElementById("filterKategori").value === "all" ? "Semua Kategori" : document.getElementById("filterKategori").value;
+
+    pdf.text(`Data Kebutuhan Perbaikan - ${judul}`, 40, 30);
+    pdf.autoTable({
+      startY:50,
+      head:[["No","Nama Barang","Merek/Type","Jumlah","Stok Cadangan","Keterangan"]],
+      body:data.map((b,i)=>[i+1,b.nama,b.merek,b.jumlah,b.cadangan,b.ket]),
+      styles:{fontSize:10},
+      headStyles:{fillColor:[30,136,229]}
+    });
+    pdf.save(`Data_Perbaiakan_${judul}.pdf`);
+  }
+</script>
+
+</body>
+</html>
